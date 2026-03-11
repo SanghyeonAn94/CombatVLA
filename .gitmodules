@@ -1,0 +1,3 @@
+[submodule "nikke_bvt"]
+	path = nikke_bvt
+	url = git@github.com:shiftupcorp/ai_qa_nikke_private.git
