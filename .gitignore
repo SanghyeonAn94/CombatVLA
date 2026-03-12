@@ -1,2 +1,9 @@
-serving/models/
+*.pyc
+.venv/
+__pycache__/
+captures/
+results/
 serving/grounding_dino/models/
+serving/models/
+target/
+.claude/
