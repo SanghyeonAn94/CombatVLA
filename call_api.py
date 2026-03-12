@@ -3,12 +3,12 @@ import base64
 import time
 
 # VLA (GPU 6): 빠른 액션 예측 — Qwen3-VL-4B-Instruct
-VLA_API_URL = "http://localhost:8100/v1"
+VLA_API_URL = "http://localhost:30020/v1"
 VLA_API_KEY = "combatvla"
 VLA_MODEL = "CombatVLA"
 
 # Strategist (GPU 7): 정확한 상황 분석 — Qwen3-VL-32B-Instruct
-STRATEGIST_API_URL = "http://localhost:8200/v1"
+STRATEGIST_API_URL = "http://localhost:30010/v1"
 STRATEGIST_API_KEY = "combatvla"
 STRATEGIST_MODEL = "Strategist"
 
