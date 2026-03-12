@@ -1,0 +1,101 @@
+services:
+  # GPU 6: Qwen3-VL-4B-Instruct (VLA - 액션 실행)
+  vla:
+    image: docker.io/vllm/vllm-openai:latest
+    volumes:
+      - ./models:/root/.cache/huggingface
+      - /usr/lib/x86_64-linux-gnu/libcuda.so.590.48.01:/usr/lib/x86_64-linux-gnu/libcuda.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.590.48.01:/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.590.48.01:/usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-gpucomp.so.590.48.01:/usr/lib/x86_64-linux-gnu/libnvidia-gpucomp.so.590.48.01:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.590.48.01:/usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.4:ro
+    devices:
+      - /dev/nvidia6
+      - /dev/nvidiactl
+      - /dev/nvidia-uvm
+      - /dev/nvidia-modeset
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=6
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/cuda/lib64
+      - HF_TOKEN=${HF_TOKEN:-}
+    ports:
+      - "30020:8000"
+    security_opt:
+      - label=disable
+    shm_size: '16g'
+    command:
+      - Qwen/Qwen3-VL-4B-Instruct
+      - --served-model-name=CombatVLA
+      - --dtype=bfloat16
+      - --max-model-len=4096
+      - --gpu-memory-utilization=0.50
+      - --trust-remote-code
+      - --api-key=combatvla
+
+  # GPU 7: Qwen3-VL-32B-Instruct (VLM - 화면 인식/플래닝)
+  strategist:
+    image: docker.io/vllm/vllm-openai:latest
+    volumes:
+      - ./models:/root/.cache/huggingface
+      - /home/bbungsang/projects/CombatVLA/nikke_bvt/docs:/data/glossary:ro
+      - /usr/lib/x86_64-linux-gnu/libcuda.so.590.48.01:/usr/lib/x86_64-linux-gnu/libcuda.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.590.48.01:/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.590.48.01:/usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-gpucomp.so.590.48.01:/usr/lib/x86_64-linux-gnu/libnvidia-gpucomp.so.590.48.01:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.590.48.01:/usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.4:ro
+    devices:
+      - /dev/nvidia7
+      - /dev/nvidiactl
+      - /dev/nvidia-uvm
+      - /dev/nvidia-modeset
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=7
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/cuda/lib64
+      - HF_TOKEN=${HF_TOKEN:-}
+    ports:
+      - "30010:8000"
+    security_opt:
+      - label=disable
+    shm_size: '16g'
+    command:
+      - Qwen/Qwen3-VL-32B-Instruct
+      - --served-model-name=Strategist
+      - --dtype=bfloat16
+      - --max-model-len=32768
+      - --gpu-memory-utilization=0.90
+      - --trust-remote-code
+      - --api-key=combatvla
+
+  # GPU 6: GroundingDINO SwinB (UI 요소 bbox 감지)
+  grounding-dino:
+    image: grounding-dino-server
+    build:
+      context: ./grounding_dino
+      dockerfile: Dockerfile
+    volumes:
+      - ./grounding_dino/models:/models:ro
+      - /usr/lib/x86_64-linux-gnu/libcuda.so.590.48.01:/usr/lib/x86_64-linux-gnu/libcuda.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.590.48.01:/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.590.48.01:/usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-gpucomp.so.590.48.01:/usr/lib/x86_64-linux-gnu/libnvidia-gpucomp.so.590.48.01:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.590.48.01:/usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.4:ro
+    devices:
+      - /dev/nvidia6
+      - /dev/nvidiactl
+      - /dev/nvidia-uvm
+      - /dev/nvidia-modeset
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=6
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - LD_LIBRARY_PATH=/usr/local/lib/python3.10/dist-packages/nvidia/cu13/lib:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/cuda/lib64
+      - HF_TOKEN=${HF_TOKEN:-}
+    ports:
+      - "30030:8000"
+    security_opt:
+      - label=disable
+    shm_size: '1g'
