@@ -63,7 +63,7 @@ services:
     shm_size: '16g'
     command:
       - Qwen/Qwen3-VL-32B-Instruct
-      - --served-model-name=Strategist
+      - --served-model-name=ActorVLM
       - --dtype=bfloat16
       - --max-model-len=32768
       - --gpu-memory-utilization=0.90
