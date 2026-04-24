@@ -33,23 +33,24 @@ services:
       - --trust-remote-code
       - --api-key=combatvla
 
-  # GPU 6: Qwen3.5-27B (ActorVLM - 화면 인식/플래닝)
+  # GPU 2: Qwen3.5-27B (ActorVLM - 화면 인식/플래닝)
   actorvlm:
     image: docker.io/vllm/vllm-openai:latest
     volumes:
       - ./models:/root/.cache/huggingface
+      - /data/combatvla_models:/data/combatvla_models
       - /home/bbungsang/projects/CombatVLA/nikke_bvt/docs:/data/glossary:ro
       - /usr/lib/x86_64-linux-gnu/libcuda.so.590.48.01:/usr/lib/x86_64-linux-gnu/libcuda.so.1:ro
       - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.590.48.01:/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:ro
       - /usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.590.48.01:/usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.1:ro
       - /usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.590.48.01:/usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.4:ro
     devices:
-      - /dev/nvidia6
+      - /dev/nvidia2
       - /dev/nvidiactl
       - /dev/nvidia-uvm
       - /dev/nvidia-modeset
     environment:
-      - NVIDIA_VISIBLE_DEVICES=6
+      - NVIDIA_VISIBLE_DEVICES=2
       - NVIDIA_DRIVER_CAPABILITIES=all
       - CUDA_VISIBLE_DEVICES=0
       - LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/cuda/lib64
