@@ -33,7 +33,7 @@ services:
       - --trust-remote-code
       - --api-key=combatvla
 
-  # GPU 2: Qwen3.5-27B (ActorVLM - 화면 인식/플래닝)
+  # GPU 5: Qwen3.5-27B (ActorVLM - 화면 인식/플래닝)
   actorvlm:
     image: docker.io/vllm/vllm-openai:latest
     volumes:
@@ -45,12 +45,12 @@ services:
       - /usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.590.48.01:/usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.1:ro
       - /usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.590.48.01:/usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.4:ro
     devices:
-      - /dev/nvidia2
+      - /dev/nvidia5
       - /dev/nvidiactl
       - /dev/nvidia-uvm
       - /dev/nvidia-modeset
     environment:
-      - NVIDIA_VISIBLE_DEVICES=2
+      - NVIDIA_VISIBLE_DEVICES=5
       - NVIDIA_DRIVER_CAPABILITIES=all
       - CUDA_VISIBLE_DEVICES=0
       - LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/cuda/lib64
