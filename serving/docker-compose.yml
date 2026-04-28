@@ -102,3 +102,18 @@ services:
     security_opt:
       - label=disable
     shm_size: '1g'
+
+  # CPU only: ActorVLM specs 인트로스펙션
+  specs:
+    image: actorvlm-specs
+    build:
+      context: ./specs
+      dockerfile: Dockerfile
+    environment:
+      - ACTORVLM_URL=http://actorvlm:8000
+      - ACTORVLM_KEY=combatvla
+      - HOST_IP=10.213.70.101
+    ports:
+      - "30040:8000"
+    security_opt:
+      - label=disable
