@@ -7,9 +7,6 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 
 ACTORVLM_URL = os.environ.get("ACTORVLM_URL", "http://actorvlm:8000")
 ACTORVLM_KEY = os.environ.get("ACTORVLM_KEY", "combatvla")
-VLA_URL = os.environ.get("VLA_URL", "http://vla:8000")
-VLA_KEY = os.environ.get("VLA_KEY", "combatvla")
-GROUNDING_DINO_URL = os.environ.get("GROUNDING_DINO_URL", "http://grounding-dino:8000")
 HOST_IP = os.environ.get("HOST_IP", "10.213.70.101")
 PROBE_TIMEOUT = float(os.environ.get("PROBE_TIMEOUT", "3.0"))
 
@@ -18,10 +15,8 @@ app = FastAPI(title="VLM Stack Proxy + Specs")
 # ── Backend service registry ──
 # id: (base_url, api_key_or_None, role description)
 BACKENDS: dict[str, tuple[str, str | None, str]] = {
-    "actor":         (ACTORVLM_URL,       ACTORVLM_KEY, "ActorVLM (Qwen3.5-27B) — strategist · perception · classify"),
-    "actorvlm":      (ACTORVLM_URL,       ACTORVLM_KEY, "ActorVLM (Qwen3.5-27B) — alias of actor"),
-    "vla":           (VLA_URL,            VLA_KEY,      "CombatVLA (Qwen3-VL-4B) — action executor"),
-    "grounding":     (GROUNDING_DINO_URL, None,         "GroundingDINO (SwinB) — UI element bbox"),
+    "actor":    (ACTORVLM_URL, ACTORVLM_KEY, "ActorVLM (Qwen3.5-27B) — perception · planning · classify"),
+    "actorvlm": (ACTORVLM_URL, ACTORVLM_KEY, "ActorVLM (Qwen3.5-27B) — alias of actor"),
 }
 
 # Long-lived HTTP client for proxy forwarding (no timeout — VLM calls can be slow)
@@ -172,14 +167,10 @@ def to_text(d: dict, indent: int = 0) -> str:
 @app.get("/")
 async def root():
     return {
-        "service": "vlm-stack-proxy",
+        "service": "actorvlm-proxy",
         "endpoints": {
             "introspection": ["/health", "/specs", "/specs?format=text", "/services"],
-            "proxy": [
-                "/actor/v1/...  (alias: /actorvlm/v1/...)",
-                "/vla/v1/...",
-                "/grounding/...",
-            ],
+            "proxy": ["/actor/v1/...  (alias: /actorvlm/v1/...)"],
         },
         "backends": {k: v[0] for k, v in BACKENDS.items()},
     }
@@ -205,8 +196,8 @@ async def specs(format: str = Query(default="json")):
 
 async def _probe_backend(client: httpx.AsyncClient, sid: str) -> dict:
     base_url, key, role = BACKENDS[sid]
-    # vLLM exposes /v1/models, grounding has /health
-    path = "/v1/models" if sid in ("actor", "actorvlm", "vla") else "/health"
+    # vLLM exposes /v1/models
+    path = "/v1/models"
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     t0 = time.monotonic()
     try:
@@ -334,13 +325,3 @@ async def proxy_actor(sub_path: str, request: Request):
 @app.api_route("/actorvlm/{sub_path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def proxy_actorvlm(sub_path: str, request: Request):
     return await _forward("actorvlm", sub_path, request)
-
-
-@app.api_route("/vla/{sub_path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-async def proxy_vla(sub_path: str, request: Request):
-    return await _forward("vla", sub_path, request)
-
-
-@app.api_route("/grounding/{sub_path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-async def proxy_grounding(sub_path: str, request: Request):
-    return await _forward("grounding", sub_path, request)
