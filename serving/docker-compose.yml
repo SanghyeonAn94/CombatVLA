@@ -103,7 +103,7 @@ services:
       - label=disable
     shm_size: '1g'
 
-  # CPU only: ActorVLM specs 인트로스펙션
+  # CPU only: VLM stack proxy + introspection
   specs:
     image: actorvlm-specs
     build:
@@ -112,8 +112,16 @@ services:
     environment:
       - ACTORVLM_URL=http://actorvlm:8000
       - ACTORVLM_KEY=combatvla
+      - VLA_URL=http://vla:8000
+      - VLA_KEY=combatvla
+      - GROUNDING_DINO_URL=http://grounding-dino:8000
       - HOST_IP=10.213.70.101
+      - PROBE_TIMEOUT=3.0
     ports:
       - "30040:8000"
     security_opt:
       - label=disable
+    depends_on:
+      - actorvlm
+      - vla
+      - grounding-dino

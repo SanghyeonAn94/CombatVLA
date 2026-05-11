@@ -1,13 +1,44 @@
+import asyncio
 import os
+import time
 import httpx
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 ACTORVLM_URL = os.environ.get("ACTORVLM_URL", "http://actorvlm:8000")
 ACTORVLM_KEY = os.environ.get("ACTORVLM_KEY", "combatvla")
+VLA_URL = os.environ.get("VLA_URL", "http://vla:8000")
+VLA_KEY = os.environ.get("VLA_KEY", "combatvla")
+GROUNDING_DINO_URL = os.environ.get("GROUNDING_DINO_URL", "http://grounding-dino:8000")
 HOST_IP = os.environ.get("HOST_IP", "10.213.70.101")
+PROBE_TIMEOUT = float(os.environ.get("PROBE_TIMEOUT", "3.0"))
 
-app = FastAPI(title="ActorVLM Specs")
+app = FastAPI(title="VLM Stack Proxy + Specs")
+
+# ── Backend service registry ──
+# id: (base_url, api_key_or_None, role description)
+BACKENDS: dict[str, tuple[str, str | None, str]] = {
+    "actor":         (ACTORVLM_URL,       ACTORVLM_KEY, "ActorVLM (Qwen3.5-27B) — strategist · perception · classify"),
+    "actorvlm":      (ACTORVLM_URL,       ACTORVLM_KEY, "ActorVLM (Qwen3.5-27B) — alias of actor"),
+    "vla":           (VLA_URL,            VLA_KEY,      "CombatVLA (Qwen3-VL-4B) — action executor"),
+    "grounding":     (GROUNDING_DINO_URL, None,         "GroundingDINO (SwinB) — UI element bbox"),
+}
+
+# Long-lived HTTP client for proxy forwarding (no timeout — VLM calls can be slow)
+_proxy_client: httpx.AsyncClient | None = None
+
+
+@app.on_event("startup")
+async def _startup():
+    global _proxy_client
+    _proxy_client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0))
+
+
+@app.on_event("shutdown")
+async def _shutdown():
+    global _proxy_client
+    if _proxy_client:
+        await _proxy_client.aclose()
 
 SPECS = {
     "model": {
@@ -140,7 +171,18 @@ def to_text(d: dict, indent: int = 0) -> str:
 
 @app.get("/")
 async def root():
-    return {"endpoints": ["/specs", "/specs?format=text", "/health"]}
+    return {
+        "service": "vlm-stack-proxy",
+        "endpoints": {
+            "introspection": ["/health", "/specs", "/specs?format=text", "/services"],
+            "proxy": [
+                "/actor/v1/...  (alias: /actorvlm/v1/...)",
+                "/vla/v1/...",
+                "/grounding/...",
+            ],
+        },
+        "backends": {k: v[0] for k, v in BACKENDS.items()},
+    }
 
 
 @app.get("/health")
@@ -155,3 +197,150 @@ async def specs(format: str = Query(default="json")):
     if format == "text":
         return PlainTextResponse(to_text(body))
     return JSONResponse(body)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Service aggregator — gateway / dashboard calls this for VLM stack health
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def _probe_backend(client: httpx.AsyncClient, sid: str) -> dict:
+    base_url, key, role = BACKENDS[sid]
+    # vLLM exposes /v1/models, grounding has /health
+    path = "/v1/models" if sid in ("actor", "actorvlm", "vla") else "/health"
+    headers = {"Authorization": f"Bearer {key}"} if key else {}
+    t0 = time.monotonic()
+    try:
+        r = await client.get(f"{base_url}{path}", headers=headers, timeout=PROBE_TIMEOUT)
+        latency_ms = int((time.monotonic() - t0) * 1000)
+        ok = 200 <= r.status_code < 300
+        model = None
+        try:
+            payload = r.json() if "json" in r.headers.get("content-type", "") else {}
+            if isinstance(payload, dict) and payload.get("data"):
+                model = payload["data"][0].get("id")
+        except Exception:
+            pass
+        return {
+            "id": sid,
+            "role": role,
+            "endpoint": base_url,
+            "status": "healthy" if ok else "degraded",
+            "http_status": r.status_code,
+            "latency_ms": latency_ms,
+            "model": model,
+            "error": None if ok else f"HTTP {r.status_code}",
+        }
+    except httpx.TimeoutException:
+        return {
+            "id": sid, "role": role, "endpoint": base_url,
+            "status": "down", "http_status": None,
+            "latency_ms": int(PROBE_TIMEOUT * 1000),
+            "model": None, "error": "timeout",
+        }
+    except Exception as e:
+        return {
+            "id": sid, "role": role, "endpoint": base_url,
+            "status": "down", "http_status": None,
+            "latency_ms": int((time.monotonic() - t0) * 1000),
+            "model": None, "error": str(e)[:120],
+        }
+
+
+@app.get("/services")
+async def services():
+    """Aggregate live health of all VLM stack backends. Dedup aliases."""
+    seen_urls: set[str] = set()
+    unique_ids: list[str] = []
+    for sid, (url, _, _) in BACKENDS.items():
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        unique_ids.append(sid)
+
+    async with httpx.AsyncClient() as client:
+        results = await asyncio.gather(*[_probe_backend(client, sid) for sid in unique_ids])
+
+    summary = {
+        "healthy": sum(1 for r in results if r["status"] == "healthy"),
+        "degraded": sum(1 for r in results if r["status"] == "degraded"),
+        "down": sum(1 for r in results if r["status"] == "down"),
+        "total": len(results),
+    }
+    return {"summary": summary, "services": results}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Proxy — forward client requests to the right backend
+# ─────────────────────────────────────────────────────────────────────────────
+
+_HOP_BY_HOP = {
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "te", "trailers", "transfer-encoding", "upgrade", "host", "content-length",
+}
+
+
+async def _forward(backend_id: str, sub_path: str, request) -> JSONResponse:
+    """Forward HTTP request to BACKENDS[backend_id]. Inject API key. Strip hop headers."""
+    if backend_id not in BACKENDS:
+        return JSONResponse({"error": f"unknown backend '{backend_id}'"}, status_code=404)
+
+    base_url, key, _ = BACKENDS[backend_id]
+    target = f"{base_url}/{sub_path.lstrip('/')}"
+
+    # Sanitize headers
+    fwd_headers = {
+        k: v for k, v in request.headers.items() if k.lower() not in _HOP_BY_HOP
+    }
+    # Inject API key (override client's, since we own auth)
+    if key:
+        fwd_headers["Authorization"] = f"Bearer {key}"
+    else:
+        fwd_headers.pop("authorization", None)
+
+    body = await request.body()
+    try:
+        r = await _proxy_client.request(
+            method=request.method,
+            url=target,
+            headers=fwd_headers,
+            params=dict(request.query_params),
+            content=body,
+        )
+    except httpx.TimeoutException:
+        return JSONResponse({"error": "upstream timeout", "backend": backend_id}, status_code=504)
+    except httpx.HTTPError as e:
+        return JSONResponse({"error": f"upstream error: {e}", "backend": backend_id}, status_code=502)
+
+    # Forward response. Pass-through content-type.
+    out_headers = {
+        k: v for k, v in r.headers.items() if k.lower() not in _HOP_BY_HOP
+    }
+    return JSONResponse(
+        content=r.json() if "json" in r.headers.get("content-type", "") else {"raw": r.text},
+        status_code=r.status_code,
+        headers=out_headers,
+    )
+
+
+# Bound routes — explicit list so we control which backends are exposed
+from fastapi import Request  # noqa: E402
+
+
+@app.api_route("/actor/{sub_path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def proxy_actor(sub_path: str, request: Request):
+    return await _forward("actor", sub_path, request)
+
+
+@app.api_route("/actorvlm/{sub_path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def proxy_actorvlm(sub_path: str, request: Request):
+    return await _forward("actorvlm", sub_path, request)
+
+
+@app.api_route("/vla/{sub_path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def proxy_vla(sub_path: str, request: Request):
+    return await _forward("vla", sub_path, request)
+
+
+@app.api_route("/grounding/{sub_path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def proxy_grounding(sub_path: str, request: Request):
+    return await _forward("grounding", sub_path, request)
