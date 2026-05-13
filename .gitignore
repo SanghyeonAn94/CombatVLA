@@ -3,7 +3,5 @@
 __pycache__/
 captures/
 results/
-serving/grounding_dino/models/
-serving/models/
 target/
 .claude/
